@@ -1,0 +1,35 @@
+#!/bin/sh
+
+NOW_M_BEFORE=-1
+
+while true;do
+  NOW_M=`date '+%H'`
+
+  if [ $NOW_M -ne $NOW_M_BEFORE ]; then
+    echo "begin measurement:" `date`
+
+    #point:51
+    ANS="1"
+    while [ $ANS = "1" ]; do
+      echo "sweep 51"
+      ANS=$(python3 ./main.py 51;)
+      sleep 10
+      sudo chmod 666 /dev/ttyACM0
+      sleep 1
+    done
+
+    #point:101
+    ANS="1"
+    while [ $ANS = "1" ]; do
+      echo "sweep 101"
+      ANS=$(python3 ./main.py 101;)
+      sleep 10
+      sudo chmod 666 /dev/ttyACM0
+      sleep 1
+    done
+
+    NOW_M_BEFORE=$NOW_M
+    echo "finish:" `date`
+  fi
+  sleep 1
+done
