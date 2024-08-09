@@ -2,6 +2,8 @@
 
 NOW_M_BEFORE=-1
 
+sudo chmod 666 /dev/ttyACM0
+
 while true;do
   NOW_M=`date '+%H'`
 
