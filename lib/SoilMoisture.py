@@ -32,7 +32,7 @@ def Read_AllDataAndDump(ser_port,th_to):
 def Get_SoilMoisture(data_point):
     try:
         #シリアルポートを開く
-        Serial_Port=serial.Serial(port='/dev/ttyACM0', baudrate=38400, parity= 'N',timeout = 3)
+        Serial_Port=serial.Serial(port='/dev/ttyACM0', baudrate=921600, parity= 'N',timeout = 3)
 
         #接続時のレスポンスを読み出して破棄
         Read_AllDataAndDump(Serial_Port,4)
