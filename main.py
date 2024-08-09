@@ -24,13 +24,13 @@ def Record_MeasurementData(measured_data,data_point):
                 + str(data_point) + ".txt"
 
     #ファイルがなければ新規作成
-    if not os.path.isfile("./data/" + file_name):
-        f = open("./data/" + file_name,"w")
+    if not os.path.isfile("./raw_data/" + file_name):
+        f = open("./raw_data/" + file_name,"w")
         f.write("date,t(ns)\r\n")
         f.close()
 
     #書き込みデータを作成
-    f = open("./data/" + file_name,"a")
+    f = open("./raw_data/" + file_name,"a")
     f.write(now.strftime('%04Y/%m/%d %H:%M:%S') + str("\n"))
     for i in range(len(measured_data)):
         f.write(str(measured_data[i]) + "\n")
