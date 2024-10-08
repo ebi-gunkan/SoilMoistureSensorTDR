@@ -23,8 +23,7 @@ def Record_MeasurementData(measured_data):
                 + format(now.month,"#02d") \
                 + format(now.day,"#02d") + "_" \
                 + format(now.hour,"#02d") \
-                + "00_" \
-                + str(data_point) + ".txt"
+                + "00.txt"
 
     #ファイルがなければ新規作成
     if not os.path.isfile("./raw_data/" + file_name):

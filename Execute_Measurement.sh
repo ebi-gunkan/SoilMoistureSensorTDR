@@ -12,7 +12,7 @@ while true;do
   if [ $NOW_M -ne $NOW_M_BEFORE ]; then
     echo "begin measurement:" `date`
 
-    #point:51
+    #point:101
     ANS="1"
     while [ $ANS = "1" ]; do
       echo "measuring..."

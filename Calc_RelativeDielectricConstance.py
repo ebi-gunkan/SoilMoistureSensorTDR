@@ -4,6 +4,7 @@ import sys
 import datetime
 import csv
 import glob
+import numpy as np
 
 #自作ライブラリの場所を追加
 sys.path.append(os.path.join(os.path.dirname(__file__),'./config'))
@@ -15,12 +16,13 @@ STATUS_OK = 0
 STATUS_NG = 1
 C_SPEED = config_data.C_SPEED
 PROBE_LENGTH = config_data.PROBE_LENGTH
+MEASUREMENT_POINT = config_data.MEASUREMENT_POINT
 
 #処理概要　時間軸データが格納されたCSVファイルから読み出して配列に格納
 #引数　measurement_point：測定点数
 #戻り値　時間軸データ配列（リスト型）
 def Get_TimeDomainData(measurement_point):
-    f = open("./time_domain_data/time_domain_" + str(measurement_point) + ".csv","r")
+    f = open("./time_domain_data/time_domain.csv","r")
     temp = csv.reader(f,delimiter = ",")
 
     time_domain_data = []
@@ -58,209 +60,151 @@ def Get_WaveFormDataArray(file_name):
 #引数　time_domain_data；時間軸データ、waveform_data：波形データ
 #戻り値　土壌水分の範囲、反射波の到達時刻配列（リスト型）
 def Detect_SoilSurfaceReflect(time_domain_data,waveform_data):
-    #土壌水分が中程度または多い場合
-    reflect = waveform_data[0]
-    reflect_time_array = []
-
+    #反射係数の勾配を求める
+    gradient = []
     i = 1
-    #反射波の到達時刻の始まりを検知
-    while True:
-        if reflect >= waveform_data[i] and \
-        waveform_data[i] >= config_data.MINIMUM_SOIL_REFLECT and \
-        waveform_data[i] < config_data.MAXIMUM_SOIL_REFLECT:
-            break
-        reflect = waveform_data[i]
+    while i <= MEASUREMENT_POINT -2:
+        temp_x_array = [time_domain_data[i-1],time_domain_data[i],time_domain_data[i+1]]
+        temp_y_array = [waveform_data[i-1],waveform_data[i],waveform_data[i+1]]
+        a,b = np.polyfit(temp_x_array,temp_y_array,1)
+
+        gradient.append(a)
         i += 1
-        if i >= len(time_domain_data)-1:
-            break
-    reflect_time_array.append(i-1)
 
-    #反射波の到達時刻の終わりを検知
-    if i != len(time_domain_data) -1:
-        while reflect <= waveform_data[i]:
-            reflect_time_array.append(i)
-            i += 1
-            if i >= len(time_domain_data)-1:
-                break
-    theta_range = "high-middle"
+    #detect minimum data after soil surface reflect
+    temp = waveform_data[12]
+    t_min = 12
+    i = 13
+    while i <= MEASUREMENT_POINT - 1:
+        if temp > waveform_data[i]:
+            temp = waveform_data[i]
+            t_min = i
+        i += 1
 
-    #土壌水分が少ない場合
-    if i == len(time_domain_data)-1:
-        #変曲点を求めるために反射係数の勾配の変化率（に相当するもの）を求める
-        gradient = []
-        for i in range(len(time_domain_data)-2):
-            gradient.append(waveform_data[i+2] - waveform_data[i])
-        gradient_change_rate = []
-        for i in range(len(gradient)-1):
-            gradient_change_rate.append(gradient[i+1]-gradient[i])
+    #detect A-point
+    temp = gradient[0]
+    i = 1
+    t_A = 1
+    while i < t_min:
+        if temp < gradient[i]:
+            temp = gradient[i]
+            t_A = i+1
+        i += 1
 
-        #勾配の変化率が下がり始める点を探す
-        reflect = gradient_change_rate[0]
-        reflect_time_array = []
-        i = 1
-        while True:
-            if reflect >= gradient_change_rate[i] and \
-            waveform_data[i+2] >= config_data.MINIMUM_SOIL_REFLECT:
-                break
-            reflect = gradient_change_rate[i]
-            i += 1
-            if i >= len(gradient_change_rate)-1:
-                break
+    #detect B-point
+    temp = gradient[0]
+    i = t_A
+    t_B = i
+    while i < t_min:
+        if temp > gradient[i]:
+            temp = gradient[i]
+            t_B = i+1
+        i += 1
 
-        #反射波の到達時刻の始まりを検知
-        while True:
-            if reflect <= gradient_change_rate[i] and \
-            waveform_data[i+2] >= config_data.MINIMUM_SOIL_REFLECT:
-                break
-            reflect = gradient_change_rate[i]
-            i += 1
-            if i >= len(gradient_change_rate)-1:
-                break
-        reflect_time_array.append(i - 1 + 2)
+    #calc tangent-line at t_A
+    temp_x_array = [time_domain_data[t_A-1],time_domain_data[t_A],time_domain_data[t_A+1]]
+    temp_y_array = [waveform_data[t_A-1],waveform_data[t_A],waveform_data[t_A+1]]
+    slope_A,intercept_A = np.polyfit(temp_x_array,temp_y_array,1)
+    intercept_A = waveform_data[t_A] - slope_A * time_domain_data[t_A]
 
-        #反射波の到達時刻の終わりを検知
-        while reflect >= gradient_change_rate[i]:
-            reflect_time_array.append(i + 2)
-            i += 1
-            if i >= len(gradient_change_rate)-1:
-                break
-        theta_range = "low"
+    #calc tangent-line at t_B
+    temp_x_array = [time_domain_data[t_B-1],time_domain_data[t_B],time_domain_data[t_B+1]]
+    temp_y_array = [waveform_data[t_B-1],waveform_data[t_B],waveform_data[t_B+1]]
+    slope_B,intercept_B = np.polyfit(temp_x_array,temp_y_array,1)
+    intercept_B = waveform_data[t_B] - slope_B * time_domain_data[t_B]
 
-    return theta_range,reflect_time_array
+    soil_surface_reflect = (intercept_B - intercept_A) / (slope_A - slope_B)
+    return soil_surface_reflect
 
 #処理概要　プローブ終端からの反射波の到達時刻（ns）を取得
 #引数　time_domain_data；時間軸データ、waveform_data：波形データ、peak_time_end：土壌表面からの反射波の到達時刻の終わり、theta_range：土壌水分の範囲
 #戻り値　反射波の到達時刻配列（リスト型）
-def Detect_ProbeEndReflect(time_domain_data,waveform_data,peak_time_end,theta_range):
-    #土壌水分が中程度または多い場合
-    if theta_range == "high-middle":
-        reflect = waveform_data[peak_time_end + 1]
-        reflect_time_array = []
+def Detect_ProbeEndReflect(time_domain_data,waveform_data):
+    #反射係数の勾配を求める
+    gradient = []
+    i = 1
+    while i <= MEASUREMENT_POINT -2:
+        temp_x_array = [time_domain_data[i-1],time_domain_data[i],time_domain_data[i+1]]
+        temp_y_array = [waveform_data[i-1],waveform_data[i],waveform_data[i+1]]
+        a,b = np.polyfit(temp_x_array,temp_y_array,1)
 
-        i = peak_time_end + 2
-        #反射波の到達時刻の始まりを検知
-        while reflect > waveform_data[i]:
-            reflect = waveform_data[i]
-            i += 1
-            if i >= len(time_domain_data)-1:
-                break
-        reflect_time_array.append(i-1)
+        gradient.append(a)
+        i += 1
 
-        #ピークが出ていない場合はNG
-        if i == len(time_domain_data)-1:
-            ans = STATUS_NG
-        #反射波の到達時刻の終わりを検知
-        else:
-            while reflect >= waveform_data[i]:
-                reflect_time_array.append(i)
-                i += 1
-                if i >= len(time_domain_data)-1:
-                    break
-            ans = STATUS_OK
+    #detect minimum data after soil surface reflect
+    temp = waveform_data[12]
+    t_min = 12
+    i = 13
+    while i <= MEASUREMENT_POINT - 1:
+        if temp > waveform_data[i]:
+            temp = waveform_data[i]
+            t_min = i
+        i += 1
 
-    #土壌水分が少ない場合
-    elif theta_range == "low":
-        #変曲点を求めるために反射係数の勾配の変化率（に相当するもの）を求める
-        gradient = []
-        for i in range(len(time_domain_data)-2):
-            gradient.append(waveform_data[i+2] - waveform_data[i])
-        gradient_change_rate = []
-        for i in range(len(gradient)-1):
-            gradient_change_rate.append(gradient[i+1]-gradient[i])
+    #get C-point
+    t_C = t_min
+    slope_C = 0
+    intercept_C = waveform_data[t_C]
 
-        #反射波の到達時刻の始まりを検知
-        reflect_time = gradient_change_rate[peak_time_end - 2]
-        reflect_time_array = []
-        i = peak_time_end - 2 + 1
-        while reflect_time < gradient_change_rate[i]:
-            reflect_time = gradient_change_rate[i]
-            i += 1
-            if i >= len(gradient_change_rate)-1:
-                break
-        reflect_time_array.append(i - 1 + 2)
+    #get D-point
+    temp = gradient[t_C-1]
+    i = t_C
+    t_D = t_C + 1
+    while i < MEASUREMENT_POINT - 2:
+        if temp < gradient[i]:
+            temp = gradient[i]
+            t_D = i+1
+        i += 1
 
-        #反射波の到達時刻の終わりを検知
-        while reflect_time <= gradient_change_rate[i]:
-            reflect_time_array.append(i + 2)
-            i += 1
-            if i >= len(gradinent_change_rate)-1:
-                break
-        ans = STATUS_OK
+    #calc tangent-line at t_D
+    temp_x_array = [time_domain_data[t_D-1],time_domain_data[t_D],time_domain_data[t_D+1]]
+    temp_y_array = [waveform_data[t_D-1],waveform_data[t_D],waveform_data[t_D+1]]
+    slope_D,intercept_D = np.polyfit(temp_x_array,temp_y_array,1)
+    intercept_D = waveform_data[t_D] - slope_D * time_domain_data[t_D]
 
-    return ans,reflect_time_array
+    probe_end_reflect = (intercept_D - intercept_C) / (slope_C - slope_D)
+
+    return probe_end_reflect
 
 #処理概要　伝搬時間tを取得
 #引数　time_domain_data；時間軸データ、waveform_data：波形データ
 #戻り値　測定成否、土壌表面からの反射波の到達時刻、プローブ終端からの反射波の到達時刻、伝搬時間(ns)
 def Get_t(time_domain_data,waveform_data):
     #土壌表面からの反射波の到達時刻を取得
-    theta_range,soil_surface_reflect_array \
-    = Detect_SoilSurfaceReflect(time_domain_data,waveform_data)
+    soil_surface_reflect = Detect_SoilSurfaceReflect(time_domain_data,waveform_data)
 
     #プローブ終端からの反射波の到達時刻を取得
-    ans_probe,probe_end_reflect_array = \
-    Detect_ProbeEndReflect(time_domain_data,waveform_data, \
-    soil_surface_reflect_array[-1],theta_range)
+    probe_end_reflect = Detect_ProbeEndReflect(time_domain_data,waveform_data)
 
-    if ans_probe == STATUS_OK:
-        #土壌表面からの反射波の到達時刻が複数のタイムステップにまたがる場合は平均値を計算
-        t_cnt = 0
-        soil_reflect_avg = 0
-        for i in range(len(soil_surface_reflect_array)):
-            t_cnt += 1
-            soil_reflect_avg += time_domain_data[soil_surface_reflect_array[i]]
-        soil_reflect_avg = soil_reflect_avg / t_cnt
+    #calc t
+    t = probe_end_reflect - soil_surface_reflect
 
-        #プローブ終端からの反射波の到達時刻が複数のタイムステップにまたがる場合は平均値を計算
-        t_cnt = 0
-        probe_reflect_avg = 0
-        for i in range(len(probe_end_reflect_array)):
-            t_cnt += 1
-            probe_reflect_avg += time_domain_data[probe_end_reflect_array[i]]
-        probe_reflect_avg = probe_reflect_avg / t_cnt
-        t = probe_reflect_avg - soil_reflect_avg
-
-        if soil_surface_reflect_array[-1] == len(time_domain_data) - 1 or \
-        probe_end_reflect_array[-1] == len(time_domain_data) - 1:
-            return STATUS_NG,soil_reflect_avg,probe_reflect_avg,t
-        else:
-            return STATUS_OK,soil_reflect_avg,probe_reflect_avg,t
-    else:
-            return STATUS_NG,0,0,0
+    return soil_surface_reflect,probe_end_reflect,t
 
 #処理概要　比誘電率を計算
 #引数　なし
 #戻り値　なし
 def Calc_RelativeDielectricConstance():
     #波形データ一覧を取得
-    files_51 = sorted(glob.glob("./raw_data/*_51.txt"))
+    files = sorted(glob.glob("./raw_data/*_101.txt"))
 
     result = []
-    for i in range(len(files_51)):
+    for i in range(len(files)):
         #波形データ一覧を取得
-        datetime_data,waveform_51 = Get_WaveFormDataArray(files_51[i])
+        datetime_data,waveform = Get_WaveFormDataArray(files[i])
 
         #時間軸データ一覧を取得
-        time_domain_51 = Get_TimeDomainData(config_data.MEASUREMENT_POINT)
+        time_domain = Get_TimeDomainData(MEASUREMENT_POINT)
 
         #伝搬時間tを計算
-        ans_51,peak_51,reflect_51,t_51 = Get_t(time_domain_51,waveform_51)
+        soil_surface_reflect,probe_end_reflect,t = Get_t(time_domain,waveform)
 
         #比誘電率を計算
-        if ans_51 == STATUS_NG:
-            e = "#N/A"
-            peak = "#N/A"
-            reflect = "#N/A"
-        elif ans_51 == STATUS_OK:
-            e = str(((C_SPEED * t_51 * (10 ** (-9))) / (2 * PROBE_LENGTH)) ** 2)
-            peak = str(peak_51)
-            reflect = str(reflect_51)
-        else:
-            e = "#N/A"
-            peak = "#N/A"
-            reflect = "#N/A"
+        e = str(((C_SPEED * t * (10 ** (-9))) / (2 * PROBE_LENGTH)) ** 2)
+        soil_surface_reflect = str(soil_surface_reflect)
+        probe_end_reflect = str(probe_end_reflect)
 
-        result.append([str(datetime_data),peak,reflect,e])
+        result.append([str(datetime_data),soil_surface_reflect,probe_end_reflect,e])
 
     #CSVファイルに書き出し
     f = open("./relative_dielectric_constant_data/result.csv","w")
