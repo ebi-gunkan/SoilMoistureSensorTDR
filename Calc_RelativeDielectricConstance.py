@@ -186,7 +186,7 @@ def Get_t(time_domain_data,waveform_data):
 #戻り値　なし
 def Calc_RelativeDielectricConstance():
     #波形データ一覧を取得
-    files = sorted(glob.glob("./raw_data/*_101.txt"))
+    files = sorted(glob.glob("./raw_data/*_*.txt"))
 
     result = []
     for i in range(len(files)):
